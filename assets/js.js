@@ -53,6 +53,7 @@ Run.prototype.onMessage = function(msg) {
 
 Run.prototype.runEnd = function(data) {
 	clearInterval(this.stopWatchInterval);
+	this.stopWatchInterval = null;
 	$("#content").html("Tillykke!: <pre>" + (data.durationNs / 1000 / 1000).toHHMMSS() + "<pre>");
 };
 
@@ -61,6 +62,11 @@ Run.prototype.updateStopwatch = function() {
 };
 
 Run.prototype.runStart = function(data) {
+	
+	if(this.stopWatchInterval) {
+		clearInterval(this.stopWatchInterval);
+	}
+
 	this.stopWatchStart = Date.now();
 	this.stopWatchElem = $(document.createElement("pre")).text("00:00:00.00");
 	$("#content").html("Løøøb!").append(this.stopWatchElem);
