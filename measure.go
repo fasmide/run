@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+
 	"time"
 
 	"encoding/json"
+
+	"github.com/davecheney/gpio"
 )
 
 type Measure struct {
@@ -40,22 +43,26 @@ func NewMeasure(comms chan Muxable) *Measure {
 
 func (m *Measure) Loop() {
 
-	for {
-		time.Sleep(1 * time.Second)
-
-		started := time.Now()
-
-		m.output <- &MeasurementStarted{Started: started}
-
-		time.Sleep(5 * time.Second)
-
-		ended := time.Now()
-		duration := ended.Sub(started)
-
-		m.output <- &MeasurementEnded{Started: started,
-			Ended:            ended,
-			Duration:         duration,
-			DurationReadable: fmt.Sprintf("%s", duration),
-		}
+	// set GPIO22 to input mode
+	pin, err := gpio.OpenPin(gpio.GPIO17, gpio.ModeInput)
+	if err != nil {
+		fmt.Printf("Error opening pin! %s\n", err)
+		return
 	}
+
+	var started time.Time
+	err = pin.BeginWatch(gpio.EdgeFalling, func() {
+		started = time.Now()
+		fmt.Printf("Callback for %d triggered!\n\n", gpio.GPIO22)
+		m.output <- &MeasurementStarted{Started: started}
+	})
+
+	// ended := time.Now()
+	// duration := ended.Sub(started)
+
+	// m.output <- &MeasurementEnded{Started: started,
+	// 	Ended:            ended,
+	// 	Duration:         duration,
+	// 	DurationReadable: fmt.Sprintf("%s", duration),
+	//  }
 }
