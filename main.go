@@ -36,6 +36,6 @@ func main() {
 		}
 	}()
 
-	web.ListenAndServe()
+	web.ListenAndServe(store)
 
 }

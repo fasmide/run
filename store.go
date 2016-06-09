@@ -25,6 +25,15 @@ func (s *Store) Add(doc *MeasurementEnded) (bson.ObjectId, error) {
 	return i, err
 }
 
-func (s *Store) GetHighscores() {
+func (s *Store) GetHighscores() []MeasurementEnded {
 
+	q := s.db.DB("run").C("measurements").Find(nil)
+
+	var results []MeasurementEnded
+	err := q.All(&results)
+
+	if err != nil {
+		panic(err.Error())
+	}
+	return results
 }

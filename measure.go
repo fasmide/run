@@ -46,28 +46,43 @@ func (m *Measure) Loop() {
 	// set GPIO22 to input mode
 	preStartPin, err := gpio.OpenPin(gpio.GPIO17, gpio.ModeInput)
 	if err != nil {
-		fmt.Printf("Error opening pin! %s\n", err)
+		fmt.Printf("Error opening pin! %s\n", err.Error())
 		return
 	}
 
-	// set GPIO22 to input mode
+	postStartPin, err := gpio.OpenPin(gpio.GPIO27, gpio.ModeInput)
+	if err != nil {
+		fmt.Print("Error opening pin %s\n", err.Error())
+		return
+	}
+
 	finishPin, err := gpio.OpenPin(gpio.GPIO22, gpio.ModeInput)
 	if err != nil {
-		fmt.Printf("Error opening pin! %s\n", err)
+		fmt.Printf("Error opening pin! %s\n", err.Error())
 		return
 	}
 
-	var started time.Time
+	var starters []time.Time = make([]time.Time, 0, 5)
 
 	err = preStartPin.BeginWatch(gpio.EdgeFalling, func() {
-		started = time.Now()
+		fmt.Printf("Hej\n", "hej")
+	})
+
+	err = postStartPin.BeginWatch(gpio.EdgeFalling, func() {
 		fmt.Printf("Callback for start line called!\n", gpio.GPIO22)
+		started := time.Now()
 		m.output <- &MeasurementStarted{Started: started}
+		starters = append(starters, started)
 	})
 
 	err = finishPin.BeginWatch(gpio.EdgeFalling, func() {
 		fmt.Printf("Callback for finish line triggered!\n")
 		ended := time.Now()
+		started := starters[0]
+
+		//remove this "starter"
+		starters = starters[1:]
+
 		duration := ended.Sub(started)
 
 		m.output <- &MeasurementEnded{Started: started,

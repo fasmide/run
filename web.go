@@ -14,7 +14,7 @@ func NewWeb() *Web {
 	return &Web{mux: NewMux()}
 }
 
-func (w *Web) ListenAndServe() {
+func (w *Web) ListenAndServe(s *Store) {
 
 	r := gin.Default()
 
@@ -31,6 +31,10 @@ func (w *Web) ListenAndServe() {
 
 	r.GET("/ws", func(c *gin.Context) {
 		w.mux.Handle(c.Writer, c.Request)
+	})
+
+	r.GET("/highscores", func(c *gin.Context) {
+		c.JSON(200, s.GetHighscores())
 	})
 
 	r.Run()
