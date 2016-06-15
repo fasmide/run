@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -27,7 +29,14 @@ func (s *Store) Add(doc *MeasurementEnded) (bson.ObjectId, error) {
 
 func (s *Store) GetHighscores() []MeasurementEnded {
 
-	q := s.db.DB("run").C("measurements").Find(nil)
+	// Select all measurements in the last 7 days
+	q := s.db.DB("run").C("measurements").Find(bson.M{
+		"_id": bson.M{
+			"gt": bson.NewObjectIdWithTime(time.Now().Add(time.Duration(time.Hour * -24 * 7))),
+		},
+	})
+
+	q.Sort("duration")
 
 	var results []MeasurementEnded
 	err := q.All(&results)
