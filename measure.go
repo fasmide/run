@@ -14,7 +14,7 @@ const (
 	PREPOSTDISTANCEM    = 0.15
 	POSTFINISHDISTANCEM = 0.5
 	MAXSPEED            = 10.0
-	MINSPEED            = 7.0
+	MINSPEED            = 0.1
 )
 
 type Measure struct {
@@ -77,11 +77,12 @@ func (m *Measure) Loop() {
 
 	err = preStartPin.BeginWatch(gpio.EdgeFalling, func() {
 		fmt.Printf("Hej\n", "hej")
-		(*currentStarter) = time.Now()
+		tmp := time.Now()
+		currentStarter = &tmp
 	})
 
 	err = postStartPin.BeginWatch(gpio.EdgeFalling, func() {
-		fmt.Printf("Callback for start line called!\n", gpio.GPIO22)
+		fmt.Printf("Callback for start line called!\n")
 
 		if currentStarter == nil {
 			fmt.Println("No starting without running though first light barrier")
@@ -93,14 +94,16 @@ func (m *Measure) Loop() {
 		dur := started.Sub(*currentStarter)
 		currentStarter = nil
 
-		speed := dur.Seconds() / PREPOSTDISTANCEM
+		speed := PREPOSTDISTANCEM / dur.Seconds()
 
 		if speed > MAXSPEED {
 			// too fast
+			fmt.Printf("Too fast though pre and post barriers: %f, max: %f\n", speed, MAXSPEED)
 			return
 		}
 
 		if speed < MINSPEED {
+			fmt.Printf("Too slow though pre and post barriers: %f, min: %f\n", speed, MINSPEED)
 			// too slow
 			return
 		}
@@ -122,13 +125,13 @@ func (m *Measure) Loop() {
 
 		mStarted := starters[0]
 
-		minDuration := POSTFINISHDISTANCEM / (mStarted.Speed - 3)
-		maxDuration := POSTFINISHDISTANCEM / (mStarted.Speed + 3)
+		minDuration := (mStarted.Speed - 3) / POSTFINISHDISTANCEM
+		maxDuration := (mStarted.Speed + 3) / POSTFINISHDISTANCEM
 
 		duration := ended.Sub(mStarted.Started)
 
 		if duration.Seconds() < minDuration {
-			fmt.Printf("This runner is way too fast: %s, %s min", duration, minDuration)
+			fmt.Printf("This runner is way too fast: %s, %f min\n", duration, minDuration)
 			return
 		}
 
@@ -136,7 +139,7 @@ func (m *Measure) Loop() {
 		starters = starters[1:]
 
 		if duration.Seconds() > maxDuration {
-			fmt.Printf("This runner took to long: %s, %s allowed", duration, maxDuration)
+			fmt.Printf("This runner took to long: %s, %f allowed\n", duration, maxDuration)
 			return
 		}
 
