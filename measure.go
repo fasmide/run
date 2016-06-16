@@ -10,12 +10,20 @@ import (
 	"github.com/davecheney/gpio"
 )
 
+const (
+	PREPOSTDISTANCEM    = 0.15
+	POSTFINISHDISTANCEM = 0.5
+	MAXSPEED            = 10.0
+	MINSPEED            = 7.0
+)
+
 type Measure struct {
 	output chan Muxable
 }
 
 type MeasurementStarted struct {
 	Started time.Time `json:"started"`
+	Speed   float64   `json:"speed"`
 }
 
 func (m *MeasurementStarted) Marshal() *[]byte {
@@ -30,6 +38,7 @@ type MeasurementEnded struct {
 	Ended            time.Time     `json:"ended"`
 	Duration         time.Duration `json:"durationNs"`
 	DurationReadable string        `json:"durationHumanReadable"`
+	Speed            float64       `json:"speed"`
 }
 
 func (m *MeasurementEnded) Marshal() *[]byte {
@@ -62,30 +71,76 @@ func (m *Measure) Loop() {
 		return
 	}
 
-	var starters []time.Time = make([]time.Time, 0, 5)
+	var starters []MeasurementStarted = make([]MeasurementStarted, 0, 5)
+
+	var currentStarter *time.Time
 
 	err = preStartPin.BeginWatch(gpio.EdgeFalling, func() {
 		fmt.Printf("Hej\n", "hej")
+		(*currentStarter) = time.Now()
 	})
 
 	err = postStartPin.BeginWatch(gpio.EdgeFalling, func() {
 		fmt.Printf("Callback for start line called!\n", gpio.GPIO22)
+
+		if currentStarter == nil {
+			fmt.Println("No starting without running though first light barrier")
+			return
+		}
+
 		started := time.Now()
-		m.output <- &MeasurementStarted{Started: started}
-		starters = append(starters, started)
+
+		dur := started.Sub(*currentStarter)
+		currentStarter = nil
+
+		speed := dur.Seconds() / PREPOSTDISTANCEM
+
+		if speed > MAXSPEED {
+			// too fast
+			return
+		}
+
+		if speed < MINSPEED {
+			// too slow
+			return
+		}
+
+		mStarted := MeasurementStarted{Started: started, Speed: speed}
+
+		starters = append(starters, mStarted)
+		m.output <- &mStarted
 	})
 
 	err = finishPin.BeginWatch(gpio.EdgeFalling, func() {
 		fmt.Printf("Callback for finish line triggered!\n")
-		ended := time.Now()
-		started := starters[0]
-
 		//remove this "starter"
+		if len(starters) <= 0 {
+			return
+		}
+
+		ended := time.Now()
+
+		mStarted := starters[0]
+
+		minDuration := POSTFINISHDISTANCEM / (mStarted.Speed - 3)
+		maxDuration := POSTFINISHDISTANCEM / (mStarted.Speed + 3)
+
+		duration := ended.Sub(mStarted.Started)
+
+		if duration.Seconds() < minDuration {
+			fmt.Printf("This runner is way too fast: %s, %s min", duration, minDuration)
+			return
+		}
+
+		// remove this starter
 		starters = starters[1:]
 
-		duration := ended.Sub(started)
+		if duration.Seconds() > maxDuration {
+			fmt.Printf("This runner took to long: %s, %s allowed", duration, maxDuration)
+			return
+		}
 
-		m.output <- &MeasurementEnded{Started: started,
+		m.output <- &MeasurementEnded{Started: mStarted.Started,
 			Ended:            ended,
 			Duration:         duration,
 			DurationReadable: fmt.Sprintf("%s", duration),
