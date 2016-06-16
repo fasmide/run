@@ -37,5 +37,9 @@ func (w *Web) ListenAndServe(s *Store) {
 		c.JSON(200, s.GetHighscores())
 	})
 
+	r.GET("/stats", func(c *gin.Context) {
+		c.JSON(200, s.GetStats())
+	})
+
 	r.Run()
 }
