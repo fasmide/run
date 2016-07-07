@@ -12,16 +12,17 @@ type Barrier struct {
 	lastTrigger time.Time
 }
 
-func NewBarrier(pinIndex int, callback func(time.Time)) *Barrier {
+func NewBarrier(pinIndex int, callback func(time.Time)) (*Barrier, error) {
 
 	b := Barrier{}
 
 	var err error
+	fmt.Println("Var her")
 
 	b.pin, err = gpio.OpenPin(pinIndex, gpio.ModeInput)
 	if err != nil {
 		fmt.Printf("Error opening pin %d: %s\n", pinIndex, err.Error())
-		return
+		return &b, err
 	}
 
 	err = b.pin.BeginWatch(gpio.EdgeFalling, func() {
@@ -34,8 +35,8 @@ func NewBarrier(pinIndex int, callback func(time.Time)) *Barrier {
 
 	if err != nil {
 		fmt.Printf("Cannot watch pin %d: %s", pinIndex, err.Error())
-		return
+		return &b, err
 	}
 
-	return &Barrier
+	return &b, err
 }
