@@ -1,24 +1,34 @@
 package main
 
 import (
-	"fmt"
-
-	"time"
-
 	"encoding/json"
-
-	"github.com/davecheney/gpio"
+	"fmt"
+	"math"
+	"time"
 )
 
 const (
-	PREPOSTDISTANCEM    = 0.15
-	POSTFINISHDISTANCEM = 0.5
+	PREPOSTDISTANCEM    = 5.0
+	POSTFINISHDISTANCEM = 5.0
 	MAXSPEED            = 10.0
-	MINSPEED            = 7.0
+	MINSPEED            = 0.1
 )
 
 type Measure struct {
-	output chan Muxable
+	output     chan Muxable
+	pre        chan BarrierEvent
+	post       chan BarrierEvent
+	finish     chan BarrierEvent
+	preRunners []Runner
+	runners    []Runner
+}
+type Runner struct {
+	PreTime             time.Time
+	PostTime            time.Time
+	PrePostSpeed        float64
+	EstimatedDuration   time.Duration
+	EstimatedFinishTime time.Time
+	FinishTime          time.Time
 }
 
 type MeasurementStarted struct {
@@ -47,112 +57,103 @@ func (m *MeasurementEnded) Marshal() *[]byte {
 }
 
 func NewMeasure(comms chan Muxable) *Measure {
-	return &Measure{output: comms}
+
+	pre := make(chan BarrierEvent)
+	post := make(chan BarrierEvent)
+	finish := make(chan BarrierEvent)
+
+	NewBarriers(pre, post, finish)
+	go keyboard(pre, post, finish)
+
+	return &Measure{output: comms, pre: pre, post: post, finish: finish}
 }
 
 func (m *Measure) Loop() {
+	for {
+		select {
+		case pre := <-m.pre:
+			fmt.Printf("pre %s\n", pre)
+			m.preBarrier(pre.Time)
+		case post := <-m.post:
+			fmt.Printf("post %s\n", post)
+			m.postBarrier(post.Time)
 
-	// set GPIO22 to input mode
-	preStartPin, err := gpio.OpenPin(gpio.GPIO17, gpio.ModeInput)
-	if err != nil {
-		fmt.Printf("Error opening pin! %s\n", err.Error())
+		case finish := <-m.finish:
+			fmt.Printf("finish %s\n", finish)
+			m.finishBarrier(finish.Time)
+
+		}
+	}
+}
+
+//var starters []MeasurementStarted = make([]MeasurementStarted, 0, 5)
+
+//var currentStarter *time.Time
+//started := time.Now()
+//ended := time.Now()
+//duration := ended.Sub(started)
+
+func (m *Measure) preBarrier(t time.Time) {
+	m.preRunners = append(m.preRunners, Runner{PreTime: t})
+	fmt.Println(len(m.preRunners))
+}
+
+func (m *Measure) postBarrier(t time.Time) {
+	if len(m.preRunners) < 1 {
 		return
 	}
 
-	postStartPin, err := gpio.OpenPin(gpio.GPIO27, gpio.ModeInput)
-	if err != nil {
-		fmt.Print("Error opening pin %s\n", err.Error())
+	r := m.preRunners[0]
+	m.preRunners = m.preRunners[1:]
+
+	dur := t.Sub(r.PreTime)
+	r.PrePostSpeed = PREPOSTDISTANCEM / dur.Seconds()
+	r.EstimatedDuration = time.Duration(r.PrePostSpeed / POSTFINISHDISTANCEM)
+	r.EstimatedFinishTime = r.PreTime.Add(r.EstimatedDuration)
+
+	if r.PrePostSpeed > MAXSPEED {
+		fmt.Print("Too fast for this runner: %f, max: %f\n", r.PrePostSpeed, MAXSPEED)
 		return
 	}
 
-	finishPin, err := gpio.OpenPin(gpio.GPIO22, gpio.ModeInput)
-	if err != nil {
-		fmt.Printf("Error opening pin! %s\n", err.Error())
+	if r.PrePostSpeed < MINSPEED {
+		fmt.Print("Too slow though pre and post barriers: %f, min: %f\n", r.PrePostSpeed, MINSPEED)
 		return
 	}
 
-	var starters []MeasurementStarted = make([]MeasurementStarted, 0, 5)
+	m.output <- &MeasurementStarted{
+		Started: r.PostTime,
+		Speed:   r.PrePostSpeed,
+	}
 
-	var currentStarter *time.Time
+	r.PostTime = t
+	m.runners = append(m.runners, r)
+}
 
-	err = preStartPin.BeginWatch(gpio.EdgeFalling, func() {
-		fmt.Printf("Hej\n", "hej")
-		(*currentStarter) = time.Now()
-	})
+func (m *Measure) finishBarrier(t time.Time) {
+	if len(m.runners) < 1 {
+		return
+	}
 
-	err = postStartPin.BeginWatch(gpio.EdgeFalling, func() {
-		fmt.Printf("Callback for start line called!\n", gpio.GPIO22)
-
-		if currentStarter == nil {
-			fmt.Println("No starting without running though first light barrier")
-			return
+	lowestDiff := math.Abs(m.runners[0].EstimatedFinishTime.Sub(t).Seconds())
+	index := 0
+	for i, _ := range m.runners {
+		diff := math.Abs(m.runners[i].EstimatedFinishTime.Sub(t).Seconds())
+		if diff < lowestDiff {
+			lowestDiff = diff
+			index = i
 		}
+	}
 
-		started := time.Now()
+	m.runners[index].FinishTime = t
 
-		dur := started.Sub(*currentStarter)
-		currentStarter = nil
+	m.output <- &MeasurementEnded{
+		Started:          m.runners[index].PostTime,
+		Ended:            m.runners[index].FinishTime,
+		Duration:         m.runners[index].FinishTime.Sub(m.runners[index].PostTime),
+		DurationReadable: fmt.Sprintf("%s", m.runners[index].FinishTime.Sub(m.runners[index].PostTime)),
+		Speed:            POSTFINISHDISTANCEM / m.runners[index].FinishTime.Sub(m.runners[index].PostTime).Seconds(),
+	}
 
-		speed := dur.Seconds() / PREPOSTDISTANCEM
-
-		if speed > MAXSPEED {
-			// too fast
-			return
-		}
-
-		if speed < MINSPEED {
-			// too slow
-			return
-		}
-
-		mStarted := MeasurementStarted{Started: started, Speed: speed}
-
-		starters = append(starters, mStarted)
-		m.output <- &mStarted
-	})
-
-	err = finishPin.BeginWatch(gpio.EdgeFalling, func() {
-		fmt.Printf("Callback for finish line triggered!\n")
-		//remove this "starter"
-		if len(starters) <= 0 {
-			return
-		}
-
-		ended := time.Now()
-
-		mStarted := starters[0]
-
-		minDuration := POSTFINISHDISTANCEM / (mStarted.Speed - 3)
-		maxDuration := POSTFINISHDISTANCEM / (mStarted.Speed + 3)
-
-		duration := ended.Sub(mStarted.Started)
-
-		if duration.Seconds() < minDuration {
-			fmt.Printf("This runner is way too fast: %s, %s min", duration, minDuration)
-			return
-		}
-
-		// remove this starter
-		starters = starters[1:]
-
-		if duration.Seconds() > maxDuration {
-			fmt.Printf("This runner took to long: %s, %s allowed", duration, maxDuration)
-			return
-		}
-
-		m.output <- &MeasurementEnded{Started: mStarted.Started,
-			Ended:            ended,
-			Duration:         duration,
-			DurationReadable: fmt.Sprintf("%s", duration),
-		}
-
-	})
-	// ended := time.Now()
-	// duration := ended.Sub(started)
-
-	// m.output <- &MeasurementEnded{Started: started,
-	// 	Ended:            ended,
-	// 	Duration:         duration,
-	// 	DurationReadable: fmt.Sprintf("%s", duration),
-	//  }
+	m.runners = append(m.runners[:index], m.runners[index+1:]...)
 }
