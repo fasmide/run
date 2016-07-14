@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func keyboard(pre, post, finish chan BarrierEvent) {
+func keyboard(pre, post, finish chan BarrierEvent, m *Measure) {
 	// disable input buffering
 	exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
 	// do not display entered characters on the screen
@@ -28,6 +28,10 @@ func keyboard(pre, post, finish chan BarrierEvent) {
 		if b[0] == 51 {
 
 			finish <- BarrierEvent{Time: time.Now()}
+
+		}
+		if b[0] == 52 {
+			m.Flush()
 
 		}
 	}

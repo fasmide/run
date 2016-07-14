@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	PREPOSTDISTANCEM    = 5.0
-	POSTFINISHDISTANCEM = 5.0
+	PREPOSTDISTANCEM    = 1.0
+	POSTFINISHDISTANCEM = 25.0
 	MAXSPEED            = 10.0
 	MINSPEED            = 0.1
 )
@@ -63,9 +63,11 @@ func NewMeasure(comms chan Muxable) *Measure {
 	finish := make(chan BarrierEvent)
 
 	NewBarriers(pre, post, finish)
-	go keyboard(pre, post, finish)
 
-	return &Measure{output: comms, pre: pre, post: post, finish: finish}
+	m := &Measure{output: comms, pre: pre, post: post, finish: finish}
+	go keyboard(pre, post, finish, m)
+
+	return m
 }
 
 func (m *Measure) Loop() {
@@ -112,12 +114,12 @@ func (m *Measure) postBarrier(t time.Time) {
 	r.EstimatedFinishTime = r.PreTime.Add(r.EstimatedDuration)
 
 	if r.PrePostSpeed > MAXSPEED {
-		fmt.Print("Too fast for this runner: %f, max: %f\n", r.PrePostSpeed, MAXSPEED)
+		fmt.Printf("Too fast for this runner: %.2v m/s, max: %.2vm/s\n", r.PrePostSpeed, MAXSPEED)
 		return
 	}
 
 	if r.PrePostSpeed < MINSPEED {
-		fmt.Print("Too slow though pre and post barriers: %f, min: %f\n", r.PrePostSpeed, MINSPEED)
+		fmt.Printf("Too slow though pre and post barriers: %.2v, min: %.2vm/s\n", r.PrePostSpeed, MINSPEED)
 		return
 	}
 
@@ -130,7 +132,7 @@ func (m *Measure) postBarrier(t time.Time) {
 	m.runners = append(m.runners, r)
 }
 
-func (m *Measure) finishBarrier(t time.Time) {
+func (m *Measure) finishBarrierComplex(t time.Time) {
 	if len(m.runners) < 1 {
 		return
 	}
@@ -156,4 +158,28 @@ func (m *Measure) finishBarrier(t time.Time) {
 	}
 
 	m.runners = append(m.runners[:index], m.runners[index+1:]...)
+}
+func (m *Measure) finishBarrier(t time.Time) {
+	if len(m.runners) < 1 {
+		return
+	}
+
+	r := &m.runners[0]
+
+	r.FinishTime = t
+
+	m.output <- &MeasurementEnded{
+		Started:          r.PostTime,
+		Ended:            r.FinishTime,
+		Duration:         r.FinishTime.Sub(r.PostTime),
+		DurationReadable: fmt.Sprintf("%s", r.FinishTime.Sub(r.PostTime)),
+		Speed:            POSTFINISHDISTANCEM / r.FinishTime.Sub(r.PostTime).Seconds(),
+	}
+
+	m.runners = m.runners[1:]
+
+}
+func (m *Measure) Flush() {
+	m.runners = m.runners[:0]
+	m.preRunners = m.preRunners[:0]
 }
