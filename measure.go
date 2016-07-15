@@ -74,14 +74,14 @@ func (m *Measure) Loop() {
 	for {
 		select {
 		case pre := <-m.pre:
-			fmt.Printf("pre %s\n", pre)
+			fmt.Printf("\nEvent pre \t%s\n", pre)
 			m.preBarrier(pre.Time)
 		case post := <-m.post:
-			fmt.Printf("post %s\n", post)
+			fmt.Printf("\nEvent post \t%s\n", post)
 			m.postBarrier(post.Time)
 
 		case finish := <-m.finish:
-			fmt.Printf("finish %s\n", finish)
+			fmt.Printf("\nEvent finish \t%s\n", finish)
 			m.finishBarrier(finish.Time)
 
 		}
@@ -97,7 +97,9 @@ func (m *Measure) Loop() {
 
 func (m *Measure) preBarrier(t time.Time) {
 	m.preRunners = append(m.preRunners, Runner{PreTime: t})
-	fmt.Println(len(m.preRunners))
+	fmt.Printf("Now there is %v runners qualifying\n", len(m.preRunners))
+	fmt.Printf("Now there is %v runners running\n", len(m.runners))
+
 }
 
 func (m *Measure) postBarrier(t time.Time) {
@@ -130,6 +132,8 @@ func (m *Measure) postBarrier(t time.Time) {
 
 	r.PostTime = t
 	m.runners = append(m.runners, r)
+	fmt.Printf("Now there is %v runners qualifying\n", len(m.preRunners))
+	fmt.Printf("Now there is %v runners running\n", len(m.runners))
 }
 
 func (m *Measure) finishBarrierComplex(t time.Time) {
@@ -177,7 +181,8 @@ func (m *Measure) finishBarrier(t time.Time) {
 	}
 
 	m.runners = m.runners[1:]
-
+	fmt.Printf("Now there is %v runners qualifying\n", len(m.preRunners))
+	fmt.Printf("Now there is %v runners running\n", len(m.runners))
 }
 func (m *Measure) Flush() {
 	m.runners = m.runners[:0]
