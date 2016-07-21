@@ -17,7 +17,6 @@ func NewBarrier(pinIndex int, callback func(time.Time)) (*Barrier, error) {
 	b := Barrier{}
 
 	var err error
-	fmt.Println("Var her")
 
 	b.pin, err = gpio.OpenPin(pinIndex, gpio.ModeInput)
 	if err != nil {
@@ -27,7 +26,7 @@ func NewBarrier(pinIndex int, callback func(time.Time)) (*Barrier, error) {
 
 	err = b.pin.BeginWatch(gpio.EdgeFalling, func() {
 		now := time.Now()
-		if now.Sub(b.lastTrigger) > time.Millisecond*100 {
+		if now.Sub(b.lastTrigger) > time.Millisecond*1000 {
 			callback(now)
 			b.lastTrigger = now
 		}
